@@ -1,0 +1,19 @@
+# Development environment settings.
+# These values are overridden by environment variables (case-insensitive).
+
+app_name: "LLM Gateway"
+app_env: "dev"
+app_host: "0.0.0.0"
+app_port: 8000
+app_log_level: "INFO"
+app_request_timeout_seconds: 30
+
+cloud_provider_api_key: "dev-key-replace-me"
+cloud_provider_base_url: "https://api.openai.com/v1"
+cloud_provider_model: "gpt-4o-mini"
+cloud_provider_timeout_seconds: 15
+cloud_provider_max_retries: 3
+
+cache_enabled: false
+cache_similarity_threshold: 0.92
+cache_ttl_seconds: 3600
