@@ -31,16 +31,46 @@ class CacheUnavailable(GatewayError):
 
 # ── Provider failures (fail-closed) ─────────────────────────────
 class ProviderError(GatewayError):
-    """A single provider returned an error."""
+    """A single provider returned an error.
+
+    Additional context fields are attached to help debugging:
+    - ``url``: The request URL that caused the error.
+    - ``response_status``: HTTP status code returned by the provider (if any).
+    - ``response_body``: Truncated response body (first 500 characters).
+    - ``request_id``: Identifier from provider response headers (if present).
+    """
 
     status_code = 502
     error_code = "provider_error"
+
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        status_code: int | None = None,
+        url: str | None = None,
+        response_status: int | None = None,
+        response_body: str | None = None,
+        request_id: str | None = None,
+    ):
+        super().__init__(message, status_code=status_code)
+        self.url = url
+        self.response_status = response_status
+        self.response_body = response_body
+        self.request_id = request_id
 
 
 class ProviderTimeout(ProviderError):
     """A provider call exceeded its timeout."""
 
     error_code = "provider_timeout"
+
+
+class ProviderUnavailable(GatewayError):
+    """A provider is not configured or is unavailable."""
+
+    status_code = 503
+    error_code = "provider_unavailable"
 
 
 class AllProvidersFailed(GatewayError):

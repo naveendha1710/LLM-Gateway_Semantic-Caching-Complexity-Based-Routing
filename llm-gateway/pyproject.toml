@@ -18,6 +18,8 @@ dependencies = [
     "python-json-logger>=2.0",
     "prometheus-client>=0.20",
     "numpy>=1.26",
+    "typer>=0.12",
+    "rich>=13.7",
 ]
 
 [project.optional-dependencies]

@@ -43,12 +43,14 @@ def configure_logging(level: str = "INFO") -> None:
     handler = logging.StreamHandler(sys.stdout)
     handler.addFilter(CorrelationFilter())
 
+    # Use the standard JsonFormatter with a custom format string and field renames.
+    # The first argument must be a *format string*, not a callable. Passing a
+    # callable (json.dumps) caused an AttributeError because the formatter tried
+    # to access internal attributes that are only set when a format string is
+    # provided. The corrected formatter below emits a JSON line containing the
+    # timestamp, logger name, level, request_id, and the message.
     formatter = JsonFormatter(
-        json.dumps  # use stdlib json for serialization
-    )
-    # Custom field mapping for readability
-    formatter = JsonFormatter(
-        "%(asctime)s %(name)s %(levelname)s %(request_id)s %(message)s",
+        fmt="%(asctime)s %(name)s %(levelname)s %(request_id)s %(message)s",
         rename_fields={"asctime": "timestamp", "levelname": "level"},
     )
     handler.setFormatter(formatter)

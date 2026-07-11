@@ -2,12 +2,12 @@
 
   - GET /healthz  : liveness probe (always 200 if the process is up)
   - GET /readyz   : readiness probe (checks cache + provider health)
+  - GET /health/providers : detailed provider health including circuit breaker states
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter
-from starlette.requests import Request
+from fastapi import APIRouter, Request
 
 router = APIRouter()
 
@@ -55,3 +55,20 @@ async def readyz(request: Request) -> dict[str, object]:
             components["cache"] = "unavailable"
 
     return {"status": overall, "components": components}
+
+
+@router.get("/health/providers")
+async def providers_health(request: Request) -> dict[str, object]:
+    """Detailed provider health including circuit breaker states."""
+    from app.core.gateway import Gateway
+
+    app_state = request.app.state
+    gateway: Gateway | None = getattr(app_state, "gateway", None)
+
+    if gateway is None:
+        return {"status": "not_initialized", "providers": {}}
+
+    # Get extended health info including circuit breaker states
+    health_info = await gateway.extended_health()
+
+    return health_info

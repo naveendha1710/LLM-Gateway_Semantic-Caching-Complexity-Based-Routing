@@ -23,6 +23,23 @@ cp .env.example .env
 
 # run the dev server
 uvicorn app.main:app --reload --port 8000
+
+# use the CLI (recommended) — makes routing, caching, latency, and cost visible
+llmgw chat "What is the capital of France?"
+llmgw stats
+llmgw cache-inspect --top 5
+llmgw health
+llmgw benchmark --requests 100
+llmgw load-test --mode constant --rate 10 --duration 30
+llmgw chaos
+```
+
+### Raw API (if you prefer curl)
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "auto", "messages": [{"role": "user", "content": "What is the capital of France?"}]}'
 ```
 
 ## API

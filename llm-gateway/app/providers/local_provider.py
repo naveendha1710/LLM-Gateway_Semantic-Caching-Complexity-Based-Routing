@@ -1,14 +1,13 @@
-"""Cloud model provider — httpx-based, config-driven.
+"""Local model provider — httpx-based, config-driven.
 
-Talks to an OpenAI-compatible endpoint. This is the only "real" provider in
-Phase 1; local and others arrive in later phases.
+Talks to an OpenAI-compatible local endpoint (Ollama, llama.cpp, vLLM, etc.).
+This provider is used for cost-effective local inference in Phase 3.
 """
 
 from __future__ import annotations
 
 import logging
 import time
-import os
 from typing import Any
 
 import httpx
@@ -27,21 +26,19 @@ from app.observability.logging_config import request_id_var
 logger = logging.getLogger(__name__)
 
 
-class CloudProvider:
-    """OpenAI-compatible cloud provider."""
+class LocalProvider:
+    """OpenAI-compatible local provider (Ollama, llama.cpp, vLLM, etc.)."""
 
     def __init__(
         self,
         settings: Settings,
         *,
         base_url: str | None = None,
-        api_key: str | None = None,
         timeout_seconds: float | None = None,
-        provider_name: str = "cloud",
+        provider_name: str = "local",
     ) -> None:
         self._settings = settings
         self._base_url = base_url
-        self._api_key = api_key
         self._timeout_seconds = timeout_seconds
         self._provider_name = provider_name
         self._client: httpx.AsyncClient | None = None
@@ -52,53 +49,36 @@ class CloudProvider:
 
     @property
     def cost_per_1k(self) -> float:
-        # Placeholder — real pricing comes from config in a later phase.
-        return 0.002
+        # Local inference is effectively free (just compute cost)
+        return 0.0
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
             # Provider-specific config MUST be provided by factory; no legacy fallback.
-            # If base_url/api_key are missing, fail fast with a clear error.
             if not self._base_url:
                 raise ProviderError(
-                    f"CloudProvider '{self._provider_name}': base_url is required but not configured",
+                    f"LocalProvider '{self._provider_name}': base_url is required but not configured",
                     url=None,
                     request_id=request_id_var.get(),
                 )
-            if not self._api_key:
-                raise ProviderError(
-                    f"CloudProvider '{self._provider_name}': api_key is required but not configured "
-                    f"(check api_key_env in provider entry)",
-                    url=None,
-                    request_id=request_id_var.get(),
-                )
-            timeout = self._timeout_seconds or self._settings.cloud_provider_timeout_seconds
-            
-            # Explicitly disable environment proxy settings to avoid unintended proxy usage.
-            # This mirrors the behavior of the successful PowerShell request which does not rely on proxy env vars.
-            # Determine proxy configuration from environment variables if present.
-            # httpx respects the ``proxies`` argument; we pull the HTTPS proxy first,
-            # falling back to HTTP. If neither is set, ``proxies`` is left as ``None``.
-            proxy_url = os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY")
-            # If no proxy is defined we pass ``None`` – httpx treats ``None`` as “no proxy”.
-            proxy_arg = proxy_url if proxy_url else None
+            # Ensure base_url doesn't end with /v1 if it's already included
+            base_url = self._base_url
+            if base_url.endswith("/v1"):
+                base_url = base_url[:-3]
+            timeout = self._timeout_seconds or self._settings.local_provider_timeout_seconds
             self._client = httpx.AsyncClient(
-                base_url=self._base_url,
+                base_url=base_url,
                 timeout=timeout,
                 headers={
-                    "Authorization": f"Bearer {self._api_key}",
                     "Content-Type": "application/json",
                 },
-                # Enable proxy handling only when a proxy URL is provided.
-                trust_env=bool(proxy_arg),
-                proxy=proxy_arg,
             )
         return self._client
 
     async def generate(
         self, request: ChatCompletionRequest
     ) -> ChatCompletionResponse:
-        """Send the request to the cloud endpoint and parse the response."""
+        """Send the request to the local endpoint and parse the response."""
         client = await self._get_client()
         payload: dict[str, Any] = {
             "model": request.model,
@@ -107,30 +87,23 @@ class CloudProvider:
         }
         if request.max_tokens is not None:
             payload["max_tokens"] = request.max_tokens
-        # NVIDIA-specific extensions to request reasoning separately.
-        # Enable chain‑of‑thought generation and set a reasoning budget.
-        # The budget is capped by the request max_tokens if provided, otherwise a sane default.
-        reasoning_budget = request.max_tokens if request.max_tokens is not None else 1024
-        payload["chat_template_kwargs"] = {"enable_thinking": True}
-        payload["reasoning_budget"] = reasoning_budget
 
         try:
-            resp = await client.post("/chat/completions", json=payload)
+            resp = await client.post("/v1/chat/completions", json=payload)
         except httpx.TimeoutException as exc:
-            raise ProviderTimeout(f"Cloud provider timed out: {exc}") from exc
+            raise ProviderTimeout(f"Local provider timed out: {exc}") from exc
         except httpx.HTTPError as exc:
-            # Include request URL if available for debugging
             request_url = getattr(exc, "request", None)
             url_str = str(request_url.url) if request_url and hasattr(request_url, "url") else None
             raise ProviderError(
-                f"Cloud provider request failed: {exc}",
+                f"Local provider request failed: {exc}",
                 url=url_str,
                 request_id=request_id_var.get(),
             ) from exc
 
         if resp.status_code >= 400:
             raise ProviderError(
-                f"Cloud provider returned HTTP {resp.status_code}: {resp.text[:200]}",
+                f"Local provider returned HTTP {resp.status_code}: {resp.text[:200]}",
                 url=str(resp.request.url) if resp.request else None,
                 response_status=resp.status_code,
                 response_body=resp.text[:500],
@@ -144,7 +117,7 @@ class CloudProvider:
     def _parse_response(
         data: dict[str, Any], model: str
     ) -> ChatCompletionResponse:
-        """Translate the cloud response into our internal schema."""
+        """Translate the local response into our internal schema."""
         choices = []
         for i, ch in enumerate(data.get("choices", [])):
             msg = ch.get("message", {})
@@ -169,7 +142,6 @@ class CloudProvider:
         reasoning: str | None = None
         if data.get("choices"):
             first_msg = data["choices"][0].get("message", {})
-            # Some providers may use "reasoning" or "reasoning_content".
             reasoning = first_msg.get("reasoning") or first_msg.get("reasoning_content")
 
         return ChatCompletionResponse(
@@ -178,7 +150,7 @@ class CloudProvider:
             model=data.get("model", model),
             choices=choices,
             usage=usage,
-            source="cloud",
+            source="local",
             degraded=False,
             reasoning=reasoning,
         )
@@ -187,7 +159,7 @@ class CloudProvider:
         """Lightweight health check — hit the models endpoint."""
         try:
             client = await self._get_client()
-            resp = await client.get("/models")
+            resp = await client.get("/v1/models")
             return resp.status_code < 400
         except Exception:
             return False

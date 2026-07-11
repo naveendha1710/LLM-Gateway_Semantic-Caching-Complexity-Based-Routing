@@ -21,14 +21,15 @@ from app.core.config import Settings, get_settings
 from app.main import create_app
 from app.providers.cloud_provider import CloudProvider
 from app.core.gateway import Gateway
+from app.router import ProviderSelector, RequestClassifier, get_default_tier_config
 
 
-def _mock_cloud_response(content: str = "Hello from cloud") -> dict[str, Any]:
+def _mock_cloud_response(content: str = "Hello from cloud", model: str = "nvidia/nemotron-3-nano-30b-a3b") -> dict[str, Any]:
     return {
         "id": "chatcmpl-test",
         "object": "chat.completion",
         "created": 1700000000,
-        "model": "gpt-4o-mini",
+        "model": model,
         "choices": [
             {
                 "index": 0,
@@ -49,13 +50,13 @@ def app_with_mock_provider():  # type: ignore[no-untyped-def]
         app_env="dev",
         cloud_provider_api_key="test-key",
         cloud_provider_base_url="https://api.openai.com/v1",
-        cloud_provider_model="gpt-4o-mini",
+        cloud_provider_model="nvidia/nemotron-3-nano-30b-a3b",
     )
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/models":
+        if request.url.path == "/v1/models":
             return httpx.Response(200, json={"data": []})
-        return httpx.Response(200, json=_mock_cloud_response())
+        return httpx.Response(200, json=_mock_cloud_response(content="Hello from cloud", model="nvidia/nemotron-3-nano-30b-a3b"))
 
     transport = httpx.MockTransport(handler)
     provider = CloudProvider(settings)
@@ -65,11 +66,20 @@ def app_with_mock_provider():  # type: ignore[no-untyped-def]
         headers={"Authorization": "Bearer test-key"},
     )
 
+    # Create router with the cloud provider
+    tier_configs = get_default_tier_config()
+    classifier = RequestClassifier(tier_configs)
+    router = ProviderSelector(
+        providers={"cloud": provider},
+        tier_configs=tier_configs,
+        classifier=classifier,
+    )
+
     app = create_app(settings)
     # Override the lifespan-created gateway with our mock provider
     app.state.settings = settings
     app.state.provider = provider
-    app.state.gateway = Gateway(provider=provider)
+    app.state.gateway = Gateway(router=router)
 
     yield app
 
@@ -107,7 +117,7 @@ async def test_chat_completion_end_to_end(app_with_mock_provider) -> None:  # ty
         resp = await client.post(
             "/v1/chat/completions",
             json={
-                "model": "gpt-4o-mini",
+                "model": "nvidia/nemotron-3-nano-30b-a3b",
                 "messages": [{"role": "user", "content": "Hi"}],
             },
         )
@@ -128,7 +138,7 @@ async def test_request_id_header(app_with_mock_provider) -> None:  # type: ignor
         resp = await client.post(
             "/v1/chat/completions",
             json={
-                "model": "gpt-4o-mini",
+                "model": "nvidia/nemotron-3-nano-30b-a3b",
                 "messages": [{"role": "user", "content": "Hi"}],
             },
             headers={"X-Request-ID": "my-correlation-id"},
