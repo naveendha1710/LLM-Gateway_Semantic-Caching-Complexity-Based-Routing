@@ -71,7 +71,7 @@ models:
 
   complex:
     routing_strategy: "quality_optimized"
-    enabled: true
+    enabled: false
     fallback_tier: null
     providers:
       # More capable cloud model - first priority
