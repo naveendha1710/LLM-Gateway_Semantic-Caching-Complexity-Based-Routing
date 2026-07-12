@@ -1,6 +1,6 @@
 # LLM Gateway — Semantic Caching & Complexity-Based Routing
 
-A production-grade LLM gateway that sits between your application and one or more
+A Prototype LLM gateway that sits between your application and one or more
 model providers. It provides:
 
 - **Semantic caching** — repeated or near-duplicate requests are served from cache,
@@ -43,10 +43,10 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 
 ---
 
-## 🖥️ CLI — `llmgw`
+## 🖥️ CLI — `llmgw` (or `python -m app.cli.main`)
 
 The `llmgw` CLI makes the gateway's routing, caching, latency, and cost behavior
-visible without raw curl/JSON.
+visible without raw curl/JSON. You can also run it directly as a Python module.
 
 ```bash
 # Install (already included in pip install -e ".[dev]")
@@ -54,24 +54,32 @@ pip install -e ".[dev]"
 
 # Send a chat message (or start REPL if no message given)
 llmgw chat "What is the capital of France?"
+# or equivalently:
+python -m app.cli.main chat "What is the capital of France?"
 
 # Show aggregate gateway statistics (requests, cache hits, latency, cost)
 llmgw stats
+python -m app.cli.main stats
 
 # Inspect cache — show top-N nearest cached entries with similarity scores
 llmgw cache-inspect --top 5
+python -m app.cli.main cache-inspect --top 5
 
 # Show gateway and per-provider health with circuit breaker state
 llmgw health
+python -m app.cli.main health
 
 # Run latency/throughput/cache benchmark
 llmgw benchmark --requests 100
+python -m app.cli.main benchmark --requests 100
 
 # Run sustained load test (constant/step/soak/stress modes)
 llmgw load-test --mode constant --rate 10 --duration 30
+python -m app.cli.main load-test --mode constant --rate 10 --duration 30
 
 # Run chaos/resilience tests
 llmgw chaos
+python -m app.cli.main chaos
 ```
 
 ### CLI Command Reference
@@ -478,6 +486,25 @@ llm-gateway/
 
 ---
 
-## 📜 License
+## �️ Tech Stack
+
+| Layer | Technology | Purpose |
+|-------|------------|---------|
+| **Web Framework** | [FastAPI](https://fastapi.tiangolo.com/) | High-performance async API with automatic OpenAPI docs |
+| **Async HTTP** | [httpx](https://www.python-httpx.org/) | Async HTTP client for provider calls with retries/timeout |
+| **Validation** | [Pydantic](https://docs.pydantic.dev/) / [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) | Request/response validation, config management with YAML/env overlay |
+| **Vector Cache** | [Redis](https://redis.io/) + [redis-py](https://redis-py.readthedocs.io/) | Semantic cache storage with vector similarity search |
+| **Embeddings** | [sentence-transformers](https://www.sbert.net/) / custom hash | Text embeddings for semantic similarity (configurable) |
+| **CLI** | [Typer](https://typer.tiangolo.com/) | Rich CLI (`llmgw`) with auto-completion |
+| **Testing** | [pytest](https://docs.pytest.org/) / [pytest-asyncio](https://pytest-asyncio.readthedocs.io/) | 145 tests (139 unit + 6 integration) |
+| **Observability** | Structured JSON logging, `X-Request-ID` correlation, Prometheus metrics | Production-grade observability |
+| **Resilience** | Custom circuit breaker, exponential backoff with jitter, provider failover | Fault tolerance across cloud/local providers |
+| **Containerization** | Docker, Docker Compose, Kubernetes manifests | Dev/prod deployment |
+| **Type Checking** | [mypy](https://mypy-lang.org/) | Static type safety |
+| **Linting/Formatting** | [ruff](https://docs.astral.sh/ruff/) | Fast Python linter/formatter |
+
+---
+
+## �📜 License
 
 MIT License — see [LICENSE](LICENSE) for details.
