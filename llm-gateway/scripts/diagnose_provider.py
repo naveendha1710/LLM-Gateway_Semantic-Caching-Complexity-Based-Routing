@@ -50,7 +50,7 @@ def _mask_api_key(key: str | None) -> str:
     return f"{key[:4]}...{key[-4:]}"
 
 
-async def _run_diagnostic(provider_name: str) -> None:
+async def _run_diagnostic(provider_name: str, prompt: str) -> None:
     # Load settings from the development YAML file (relative to project root).
     settings_path = os.path.join(os.path.dirname(__file__), "..", "config", "settings.dev.yaml")
     settings = Settings.from_yaml(settings_path)
@@ -96,8 +96,9 @@ async def _run_diagnostic(provider_name: str) -> None:
     # Prepare a minimal request payload.
     request = ChatCompletionRequest(
         model=entry.model,
-        messages=[Message(role="user", content="Hello" )],
+        messages=[Message(role="user", content=prompt)],
         temperature=0.0,
+        max_tokens=200,
     )
 
     # Print diagnostic information before sending.
@@ -143,8 +144,13 @@ def main() -> None:
         required=True,
         help="Name of the provider entry as defined in the tier configuration.",
     )
+    parser.add_argument(
+        "--prompt",
+        default="Hello",
+        help="Prompt to send to the provider for diagnostic purposes.",
+    )
     args = parser.parse_args()
-    asyncio.run(_run_diagnostic(args.provider))
+    asyncio.run(_run_diagnostic(args.provider, args.prompt))
 
 
 if __name__ == "__main__":

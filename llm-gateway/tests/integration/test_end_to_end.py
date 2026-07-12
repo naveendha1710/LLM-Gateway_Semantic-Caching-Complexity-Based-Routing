@@ -24,7 +24,7 @@ from app.core.gateway import Gateway
 from app.router import ProviderSelector, RequestClassifier, get_default_tier_config
 
 
-def _mock_cloud_response(content: str = "Hello from cloud", model: str = "nvidia/nemotron-3-nano-30b-a3b") -> dict[str, Any]:
+def _mock_cloud_response(content: str = "Hello from cloud.", model: str = "nvidia/nemotron-3-nano-30b-a3b") -> dict[str, Any]:
     return {
         "id": "chatcmpl-test",
         "object": "chat.completion",
@@ -56,7 +56,7 @@ def app_with_mock_provider():  # type: ignore[no-untyped-def]
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/v1/models":
             return httpx.Response(200, json={"data": []})
-        return httpx.Response(200, json=_mock_cloud_response(content="Hello from cloud", model="nvidia/nemotron-3-nano-30b-a3b"))
+        return httpx.Response(200, json=_mock_cloud_response(content="Hello from cloud.", model="nvidia/nemotron-3-nano-30b-a3b"))
 
     transport = httpx.MockTransport(handler)
     provider = CloudProvider(settings)
@@ -126,7 +126,7 @@ async def test_chat_completion_end_to_end(app_with_mock_provider) -> None:  # ty
         assert body["object"] == "chat.completion"
         assert body["source"] == "cloud"
         assert body["degraded"] is False
-        assert body["choices"][0]["message"]["content"] == "Hello from cloud"
+        assert body["choices"][0]["message"]["content"] == "Hello from cloud."
         assert body["usage"]["total_tokens"] == 9
 
 

@@ -109,8 +109,17 @@ class CloudProvider:
             payload["max_tokens"] = request.max_tokens
         # NVIDIA-specific extensions to request reasoning separately.
         # Enable chain‑of‑thought generation and set a reasoning budget.
-        # The budget is capped by the request max_tokens if provided, otherwise a sane default.
-        reasoning_budget = request.max_tokens if request.max_tokens is not None else 1024
+        # Previously the budget was set equal to ``max_tokens`` which left no room for the
+        # actual answer content, causing the "reasoning‑leak" where the final answer was
+        # missing and the reasoning text was returned as the response content.
+        #
+        # The budget should be a *fraction* of the total token allowance. We now default
+        # to half of ``max_tokens`` (rounded down) when ``max_tokens`` is provided, and keep
+        # the historic default of 1024 tokens when it is not.
+        if request.max_tokens is not None:
+            reasoning_budget = max(request.max_tokens // 2, 1)
+        else:
+            reasoning_budget = 1024
         payload["chat_template_kwargs"] = {"enable_thinking": True}
         payload["reasoning_budget"] = reasoning_budget
 

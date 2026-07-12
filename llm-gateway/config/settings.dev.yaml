@@ -127,3 +127,5 @@ local_provider_timeout_seconds: 60
 cache_enabled: true
 cache_similarity_threshold: 0.92
 cache_ttl_seconds: 3600
+cache_embedder_kind: "sentence_transformer"
+

@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 from app.api.schemas.requests import ChatCompletionRequest
 from app.api.schemas.responses import ChatCompletionResponse
+from app.cache.quality_gate import passes_quality_gate
 from app.core.exceptions import ProviderError
 from app.router.selector import ProviderSelector
 
@@ -154,6 +155,11 @@ class Gateway:
 
         If ``request.bypass_cache`` is ``True`` the lookup is skipped but a
         write may still occur on a miss.
+
+        Quality gate: if the provider response fails the quality gate (e.g.,
+        truncated with finish_reason="length" or mid-sentence), we retry once
+        with a higher max_tokens budget. If the retry also fails, we return
+        the response with degraded=True so the caller knows it's incomplete.
         """
         # 1️⃣ Cache lookup (unless bypassed)
         if not getattr(request, "bypass_cache", False):
@@ -164,11 +170,48 @@ class Gateway:
         # 2️⃣ Generate via provider selector
         response = await self._router.select_and_execute(request)
 
-        # 3️⃣ Do not cache degraded responses (quality gate will have marked)
+        # 3️⃣ Quality gate check — retry once with higher max_tokens if failed
+        if not passes_quality_gate(response):
+            logger.warning(
+                "quality_gate_rejected_retrying",
+                extra={
+                    "finish_reason": response.choices[0].finish_reason if response.choices else "none",
+                    "content_preview": response.choices[0].message.content[:100] if response.choices else "",
+                },
+            )
+            # Retry with increased max_tokens
+            retry_request = request.model_copy(
+                update={"max_tokens": self._calculate_retry_max_tokens(request.max_tokens)}
+            )
+            response = await self._router.select_and_execute(retry_request)
+            
+            # Check quality gate again after retry
+            if not passes_quality_gate(response):
+                logger.warning(
+                    "quality_gate_rejected_after_retry",
+                    extra={
+                        "finish_reason": response.choices[0].finish_reason if response.choices else "none",
+                        "content_preview": response.choices[0].message.content[:100] if response.choices else "",
+                    },
+                )
+                # Mark as degraded so caller knows it's incomplete
+                response.degraded = True
+
+        # 4️⃣ Do not cache degraded responses
         if not response.degraded:
             await self._cache_write(request, response)
 
         return response
+
+    def _calculate_retry_max_tokens(self, current_max_tokens: int | None) -> int:
+        """Calculate max_tokens for retry attempt.
+        
+        If current max_tokens is set, double it (capped at 8192).
+        If not set, use a generous default of 4096.
+        """
+        if current_max_tokens is not None:
+            return min(current_max_tokens * 2, 8192)
+        return 4096
 
     async def cache_health(self) -> bool:
         """Return ``True`` if the cache is healthy or not configured."""

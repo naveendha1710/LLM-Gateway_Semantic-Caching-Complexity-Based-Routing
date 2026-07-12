@@ -41,7 +41,7 @@ from app.router.tier_config import get_default_tier_config
 
 
 def _make_response(
-    content: str = "Hello back",
+    content: str = "Hello back.",
     *,
     degraded: bool = False,
     finish_reason: str = "stop",
@@ -379,7 +379,7 @@ class TestVectorStore:
 
 class TestQualityGate:
     def test_good_response_passes(self) -> None:
-        resp = _make_response("A good answer")
+        resp = _make_response("A good answer.")
         assert passes_quality_gate(resp) is True
 
     def test_degraded_rejected(self) -> None:
@@ -402,11 +402,11 @@ class TestQualityGate:
         assert passes_quality_gate(resp) is False
 
     def test_bad_finish_reason_rejected(self) -> None:
+        # "length" should be rejected (truncated due to token limit)
         resp = _make_response("text", finish_reason="length")
-        assert passes_quality_gate(resp) is True  # "length" is allowed
+        assert passes_quality_gate(resp) is False
 
-        # Pydantic Literal validation rejects "content_filter" at construction,
-        # so use model_construct to bypass validation and test the gate logic.
+        # "content_filter" should also be rejected
         resp_bad = ChatCompletionResponse.model_construct(
             id="r",
             created=1,
@@ -423,6 +423,23 @@ class TestQualityGate:
             degraded=False,
         )
         assert passes_quality_gate(resp_bad) is False
+
+    def test_mid_sentence_truncation_rejected(self) -> None:
+        # Response without terminal punctuation should be rejected
+        resp = _make_response("This is an incomplete sentence without punctuation")
+        assert passes_quality_gate(resp) is False
+
+        # Response with terminal punctuation should pass
+        resp_good = _make_response("This is a complete sentence.")
+        assert passes_quality_gate(resp_good) is True
+
+        # Response ending with question mark should pass
+        resp_q = _make_response("What is the capital of India?")
+        assert passes_quality_gate(resp_q) is True
+
+        # Response ending with exclamation should pass
+        resp_excl = _make_response("Hello world!")
+        assert passes_quality_gate(resp_excl) is True
 
     def test_no_usage_rejected(self) -> None:
         resp = ChatCompletionResponse(
